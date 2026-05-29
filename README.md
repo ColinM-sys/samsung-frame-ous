@@ -1,103 +1,139 @@
 # Samsung Frame-ous
 
-**Broadcast any image to every Samsung Frame TV on a network — zero credentials required.**
-
-Samsung PSIRT confirmed in writing (May 2026) that the zero-authentication behavior on the ports below is **working as intended by specification**. This tool uses those documented behaviors.
-
-> *"Within the same network, the specification is that connections occur without authentication"*
-> — Samsung PSIRT response, 2026
+**Put anything on a Samsung Frame TV. No password. No pairing. No permission. Samsung knows and doesn't care.**
 
 ---
 
-## What it does
+## What this is
 
-- Scans the local network and finds every Samsung Frame TV automatically
-- Broadcasts any image you choose to all of them simultaneously — full screen, no popups, no warnings
-- Sends a named WebSocket pairing popup with any text you choose (e.g. "Samsung Support")
-- GUI with start/stop, live TV list, image preview, and one-click broadcast
+This tool scans your WiFi network, finds every Samsung Frame TV, and broadcasts any image you want to their screens — full screen, instant, no authentication required.
 
-## Affected ports (Samsung spec — no auth by design)
+Your neighbor has a Samsung Frame TV on shared WiFi? You can put whatever you want on it. Hotel guest down the hall? Same thing. Apartment building with one shared network? Every Frame TV on the floor.
 
-| Port | Service |
-|------|---------|
-| 9197 | DLNA AVTransport — full-screen image injection |
-| 8001 | Samsung WebSocket API — named pairing popup |
-| 8002 | Encrypted WebSocket TLS |
-| 8008 | DIAL / Google Cast HTTP |
-| 8009 | Google Cast TLS |
+No credentials. No pairing. No popup on the TV warning the owner. Nothing.
+
+## Samsung's response
+
+These vulnerabilities were reported to Samsung PSIRT (Samsung's security team) in May 2026 with full technical documentation and live video proof on three TVs simultaneously.
+
+Samsung's reply:
+
+> *"Recently, we have received a lot of reports of the same or similar security vulnerabilities for the ports you reported. And we do not reward for vulnerabilities already received."*
+>
+> *"Within the same network, the specification is that connections occur without authentication."*
+>
+> *"Unfortunately, we cannot pay reward for your report."*
+
+That's it. No fix. No CVE. No acknowledgment that millions of customers are affected. They already knew — other researchers reported it before — and they still chose not to fix it. They called it a **specification**.
+
+Meanwhile, Samsung sells The Frame TV with **"Protected by Knox"** displayed on boot. Knox is Samsung's enterprise security platform. The same TV that lets anyone on your WiFi blast content to your screen tells you it's protected by Knox when you turn it on.
+
+---
+
+## What an attacker can do
+
+Everything below requires only being on the same WiFi network. No credentials, no hacking, no special tools beyond this repo.
+
+- **Inject any image full-screen** onto the TV with no warning to the owner
+- **Launch or close any app** — YouTube, browser, anything installed
+- **Blast volume to maximum** at any time, including while someone is sleeping
+- **Read the device serial number, WiFi MAC, Bluetooth MAC, and router info** with a single HTTP request
+- **Send a pairing popup with any name** — "Samsung Support", "Samsung Security", anything — and the TV displays it verbatim with no verification
+- **Monitor when people enter and leave the room** using the TV's own motion sensor events, passively, with no interaction
+
+The Frame TV's Art Mode broadcasts a `go_to_standby` event over the network when the motion sensor detects the room is empty. It broadcasts when someone enters. Any device on the same WiFi receives this in real time. Zero auth. Zero indication to the owner.
+
+---
 
 ## Requirements
 
-```
+```bash
 pip install pillow websockets
 ```
 
-Python 3.8+ required. Works on Windows, Linux, macOS.
+Python 3.8+. Windows, Linux, macOS.
 
-## Usage
+---
 
-### GUI (recommended)
+## GUI
 
 ```bash
 python gui.py
 ```
 
-1. Hit **Start** — scans the network, TVs appear in the list
-2. Select your image (or use the built-in alert)
-3. Hit **Inject All Found TVs** to broadcast
+1. Hit **Start** — scans the network every 15 seconds, found TVs appear in the list
+2. Load an image or use the built-in alert
+3. Hit **Inject All Found TVs**
 
-### CLI
+Right-click any TV in the list to inject just that one or send a named popup.
+
+---
+
+## CLI
 
 ```bash
-# Find all Samsung TVs on LAN
+# Find Samsung TVs on the network
 python takeover.py scan
 
-# Inject image to all TVs
-python takeover.py inject --all --image alert.jpg
+# Inject image to all TVs found
+python takeover.py inject --all
 
-# Inject to one TV
-python takeover.py inject --ip 192.168.1.100
+# Inject a custom image to one TV
+python takeover.py inject --ip 192.168.1.100 --image yourimage.jpg
 
-# Send named popup ("Samsung Support" shown on TV screen)
+# Send a named popup to one TV (displays on screen verbatim)
 python takeover.py popup --ip 192.168.1.100 --name "Samsung Support"
 
-# Passive presence detection — go_to_standby = room empty
+# Passive presence detection — prints when owner enters or leaves the room
 python takeover.py watch --ip 192.168.1.100
 
-# Continuous scan + inject loop
+# Continuous scan + auto inject loop
 python takeover.py auto
 ```
 
+---
+
 ## Confirmed devices
 
-| Device | DLNA Injection | Named Popup | Presence Detection |
-|--------|---------------|-------------|-------------------|
-| Samsung Frame TV QN43LS03FAFXZA | ✅ | ✅ | ✅ |
-| Samsung Frame TV QN50LS03FAFXZA | ✅ | ✅ | ✅ |
-| Samsung Frame TV QN55LS03FAFXZA | ✅ | ✅ | ✅ |
-| Samsung S90C QN65S90CAFXZA | ❌ (blocked) | ✅ | — |
+Tested live on latest firmware, no updates available at time of testing:
 
-All on latest firmware. Samsung confirmed no fix planned.
+| Device | Image Injection | Named Popup | Presence Detection |
+|--------|----------------|-------------|-------------------|
+| QN43LS03FAFXZA (Frame 43") | ✅ | ✅ | ✅ |
+| QN50LS03FAFXZA (Frame 50") | ✅ | ✅ | ✅ |
+| QN55LS03FAFXZA (Frame 55") | ✅ | ✅ | ✅ |
+| QN65S90CAFXZA (S90C 65") | ❌ blocked | ✅ | — |
 
-## Background
+---
 
-Seven zero-authentication findings were reported to Samsung PSIRT (secbugbounty@samsung.com) in May 2026. Samsung responded that the behavior is working as intended by specification and declined to issue a fix or reward.
+## The Knox contradiction
 
-Findings included:
-- Zero-auth DLNA content injection (full-screen image to any TV on the network)
-- Zero-auth app launch/close via REST API
-- Zero-auth volume and playback control
-- Zero-auth device fingerprinting (serial, MAC, router BSSID)
-- Zero-auth WebSocket channel enumeration (10 of 11 internal channels open)
-- Art Mode data exfiltration and passive presence detection via motion sensor events
-- Google Cast popup forcing with attacker-controlled device name
+The Frame TV displays "Protected by Knox" on every boot. It returns `TokenAuthSupport: true` from its own REST API at port 8001.
 
-Samsung markets The Frame TV as *"Protected by Knox"* and returns `TokenAuthSupport: true` from its own REST API. The S90C correctly enforces Knox token authentication. The Frame TV does not.
+The Samsung S90C, a different Samsung TV, correctly enforces Knox token authentication — WebSocket connections without a valid token are rejected.
+
+The Frame TV does not enforce it on anything. Not DLNA. Not the REST API. Not 10 of 11 internal WebSocket channels. The only thing blocked is `samsung.remote.control` — the official Samsung remote app channel. Everything else is open.
+
+Samsung is selling two TVs under the same Knox marketing with completely different security implementations, and has confirmed they have no plans to change the Frame TV.
+
+---
+
+## Affected ports
+
+| Port | Service | Auth |
+|------|---------|------|
+| 9197 | DLNA AVTransport + RenderingControl | None |
+| 8001 | Samsung REST + WebSocket API | None |
+| 8002 | WebSocket TLS | None |
+| 8008 | DIAL / Google Cast | None |
+| 8009 | Google Cast TLS | None |
+
+---
 
 ## Disclaimer
 
-This tool uses network APIs that Samsung has confirmed operate without authentication by design. Only use on networks and devices you own or have explicit permission to test.
+Only use this on networks and devices you own or have explicit written permission to test. The zero-auth behavior is Samsung's documented specification — this tool just uses it.
 
-## Researcher
+---
 
-Colin McDonough — [github.com/ColinM-sys](https://github.com/ColinM-sys)
+*Reported by Colin McDonough — [github.com/ColinM-sys](https://github.com/ColinM-sys)*

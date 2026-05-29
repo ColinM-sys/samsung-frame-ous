@@ -65,6 +65,53 @@ def soap_call(ip, action, args, timeout=6):
     except Exception as e:
         return str(e)
 
+RC_NS = "urn:schemas-upnp-org:service:RenderingControl:1"
+
+def get_volume(ip, timeout=4):
+    ctrl = f"http://{ip}:9197/upnp/control/RenderingControl1"
+    body = (
+        '<?xml version="1.0"?>'
+        '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" '
+        's:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">'
+        f'<s:Body><u:GetVolume xmlns:u="{RC_NS}">'
+        '<InstanceID>0</InstanceID><Channel>Master</Channel>'
+        f'</u:GetVolume></s:Body></s:Envelope>'
+    ).encode()
+    req = urllib.request.Request(ctrl, data=body, headers={
+        "Content-Type": "text/xml; charset=utf-8",
+        "SOAPAction": f'"{RC_NS}#GetVolume"',
+    })
+    try:
+        resp = urllib.request.urlopen(req, timeout=timeout).read().decode()
+        import re
+        m = re.search(r'<CurrentVolume>(\d+)</CurrentVolume>', resp)
+        return int(m.group(1)) if m else None
+    except Exception:
+        return None
+
+def set_volume(ip, level, timeout=4):
+    level = max(0, min(100, level))
+    ctrl = f"http://{ip}:9197/upnp/control/RenderingControl1"
+    body = (
+        '<?xml version="1.0"?>'
+        '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" '
+        's:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">'
+        f'<s:Body><u:SetVolume xmlns:u="{RC_NS}">'
+        f'<InstanceID>0</InstanceID><Channel>Master</Channel>'
+        f'<DesiredVolume>{level}</DesiredVolume>'
+        f'</u:SetVolume></s:Body></s:Envelope>'
+    ).encode()
+    req = urllib.request.Request(ctrl, data=body, headers={
+        "Content-Type": "text/xml; charset=utf-8",
+        "SOAPAction": f'"{RC_NS}#SetVolume"',
+    })
+    try:
+        return urllib.request.urlopen(req, timeout=timeout).status
+    except urllib.request.HTTPError as e:
+        return e.code
+    except Exception as e:
+        return str(e)
+
 def inject_image(ip, url):
     didl = (
         f'&lt;DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" '
@@ -268,12 +315,32 @@ class App(tk.Tk):
         self._tv_tree.pack(side="left", fill="both", expand=True)
         vsb.pack(side="right", fill="y")
 
-        # right-click inject on selected TV
+        # right-click and selection bindings
         self._tv_tree.bind("<Button-3>", self._tv_context_menu)
+        self._tv_tree.bind("<<TreeviewSelect>>", self._on_tv_select)
 
-        inject_all_f = ttk.Frame(left); inject_all_f.pack(fill="x", pady=(0, 8))
+        inject_all_f = ttk.Frame(left); inject_all_f.pack(fill="x", pady=(0, 4))
         ttk.Button(inject_all_f, text="📡  Inject All Found TVs", style="Red.TButton",
                    command=self._inject_all_found).pack(fill="x")
+
+        # ── VOLUME ────────────────────────────────────────────────────────
+        vf = ttk.Frame(left); vf.pack(fill="x", pady=(2, 8))
+        ttk.Label(vf, text="Vol:").pack(side="left")
+        ttk.Button(vf, text="−−", style="Gray.TButton", width=4,
+                   command=lambda: self._vol_step(-10)).pack(side="left", padx=2)
+        ttk.Button(vf, text="−", style="Gray.TButton", width=3,
+                   command=lambda: self._vol_step(-5)).pack(side="left", padx=2)
+        self._vol_label = ttk.Label(vf, text="--", width=4, foreground="#b0ffb0",
+                                    font=("Consolas", 10, "bold"))
+        self._vol_label.pack(side="left", padx=4)
+        ttk.Button(vf, text="+", style="Gray.TButton", width=3,
+                   command=lambda: self._vol_step(5)).pack(side="left", padx=2)
+        ttk.Button(vf, text="++", style="Gray.TButton", width=4,
+                   command=lambda: self._vol_step(10)).pack(side="left", padx=2)
+        ttk.Button(vf, text="MAX", style="Red.TButton", width=5,
+                   command=lambda: self._vol_set(100)).pack(side="left", padx=(6, 2))
+        ttk.Button(vf, text="MUTE", style="Gray.TButton", width=5,
+                   command=lambda: self._vol_set(0)).pack(side="left", padx=2)
 
         # ── IMAGE ─────────────────────────────────────────────────────────
         self._section(left, "BROADCAST IMAGE")
@@ -433,6 +500,45 @@ class App(tk.Tk):
         for ip, (name, model) in self._found_tvs.items():
             self._tv_tree.insert("", "end", values=(ip, name, model))
         self._tv_count_var.set(f"TVs found: {len(self._found_tvs)}")
+
+    def _on_tv_select(self, event=None):
+        ip = self._get_selected_ip()
+        if not ip: return
+        self._vol_label.config(text="...")
+        def run():
+            v = get_volume(ip)
+            self.after(0, lambda: self._vol_label.config(
+                text=str(v) if v is not None else "--"))
+        threading.Thread(target=run, daemon=True).start()
+
+    def _get_selected_ip(self):
+        sel = self._tv_tree.selection()
+        if not sel: return None
+        return self._tv_tree.item(sel[0], "values")[0]
+
+    def _vol_step(self, delta):
+        ip = self._get_selected_ip()
+        if not ip:
+            self._log_write("[!] Select a TV from the list first.\n"); return
+        def run():
+            current = get_volume(ip)
+            if current is None:
+                self._log_write(f"  [!] Couldn't read volume from {ip}\n"); return
+            new_vol = max(0, min(100, current + delta))
+            r = set_volume(ip, new_vol)
+            self._log_write(f"  [VOL] {ip}: {current} → {new_vol} ({r})\n")
+            self.after(0, lambda: self._vol_label.config(text=str(new_vol)))
+        threading.Thread(target=run, daemon=True).start()
+
+    def _vol_set(self, level):
+        ip = self._get_selected_ip()
+        if not ip:
+            self._log_write("[!] Select a TV from the list first.\n"); return
+        def run():
+            r = set_volume(ip, level)
+            self._log_write(f"  [VOL] {ip}: → {level} ({r})\n")
+            self.after(0, lambda: self._vol_label.config(text=str(level)))
+        threading.Thread(target=run, daemon=True).start()
 
     def _tv_context_menu(self, event):
         row = self._tv_tree.identify_row(event.y)

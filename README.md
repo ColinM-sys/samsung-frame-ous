@@ -4,9 +4,19 @@
 
 ---
 
-## What this is
+## Skip the subscription
 
-This tool scans your WiFi network, finds every Samsung Frame TV, and broadcasts any image you want to their screens — full screen, instant, no authentication required.
+Samsung charges a monthly fee to display art on The Frame TV through their Art Store. You don't need it.
+
+This tool lets you put any image you want on your Frame TV for free — your own photos, downloaded art, anything — full screen, instant, no Samsung account, no subscription, no app. Just run it on the same WiFi as your TV and broadcast whatever you want.
+
+Free art on your Frame TV forever. That's it.
+
+---
+
+## What this is (the security side)
+
+This tool also scans your WiFi network, finds every Samsung Frame TV, and broadcasts any image to their screens — full screen, instant, no authentication required.
 
 Your neighbor has a Samsung Frame TV on shared WiFi? You can put whatever you want on it. Hotel guest down the hall? Same thing. Apartment building with one shared network? Every Frame TV on the floor.
 
